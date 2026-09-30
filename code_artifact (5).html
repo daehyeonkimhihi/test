@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 인포그래픽 대시보드</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js & PapaParse & Lucide Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+        }
+        /* Custom scrollbar for sleek dashboard UI */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(51, 65, 85, 0.8);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 1);
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-card-light {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen transition-colors duration-300">
+
+    <header class="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-900/80 backdrop-blur-md px-4 lg:px-8 py-3.5">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+            
+            <!-- Logo & Main Title -->
+            <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl shadow-lg shadow-cyan-500/20 text-white">
+                    <i data-lucide="layout-dashboard" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-xl font-bold bg-gradient-to-r from-slate-100 via-sky-200 to-cyan-400 bg-clip-text text-transparent">
+                            실시간 인포그래픽 대시보드
+                        </h1>
+                        <span class="px-2 py-0.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            라이브 연동
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
+                        <i data-lucide="link-2" class="w-3 h-3 text-slate-500"></i>
+                        <span id="sheetUrlDisplay" class="truncate max-w-xs md:max-w-md text-slate-400 hover:text-slate-300 cursor-pointer" onclick="openUrlModal()">
+                            Google Sheet CSV 수신 중...
+                        </span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Header Controls & Auto Refresh -->
+            <div class="flex flex-wrap items-center gap-3">
+                <!-- Auto Refresh Switch -->
+                <div class="flex items-center bg-slate-800/90 border border-slate-700/60 rounded-lg px-3 py-1.5 text-xs">
+                    <span class="text-slate-400 mr-2 flex items-center gap-1">
+                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-slate-400"></i>
+                        자동 갱신
+                    </span>
+                    <select id="refreshIntervalSelect" onchange="changeRefreshInterval()" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-cyan-500">
+                        <option value="10000">10초</option>
+                        <option value="30000" selected>30초</option>
+                        <option value="60000">1분</option>
+                        <option value="300000">5분</option>
+                        <option value="0">수동</option>
+                    </select>
+                </div>
+
+                <!-- Refresh Button -->
+                <button onclick="fetchData()" id="refreshBtn" class="flex items-center gap-1.5 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white text-xs font-medium px-3.5 py-2 rounded-lg transition shadow-md shadow-sky-900/30 active:scale-95">
+                    <i data-lucide="rotate-cw" id="refreshIcon" class="w-3.5 h-3.5"></i>
+                    <span>동기화</span>
+                </button>
+
+                <!-- Settings / Change Source Button -->
+                <button onclick="openUrlModal()" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition" title="데이터 소스 설정">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                </button>
+
+                <!-- Last Sync Tag -->
+                <div class="text-right pl-2 border-l border-slate-800 hidden sm:block">
+                    <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">마지막 업데이트</div>
+                    <div id="lastSyncTime" class="text-xs font-mono text-cyan-400 font-medium">--:--:--</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 lg:px-8 py-6 space-y-6">
+
+        <!-- Notification / Error Banner (Hidden by default) -->
+        <div id="statusToast" class="hidden rounded-xl p-4 border transition-all duration-300 flex items-start justify-between">
+            <div class="flex items-start space-x-3">
+                <i id="statusIcon" data-lucide="info" class="w-5 h-5 mt-0.5 flex-shrink-0"></i>
+                <div>
+                    <h4 id="statusTitle" class="text-sm font-semibold">알림</h4>
+                    <p id="statusMsg" class="text-xs mt-0.5 opacity-90"></p>
+                </div>
+            </div>
+            <button onclick="hideStatusToast()" class="text-slate-400 hover:text-slate-200">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <!-- Filter & Search Controls Bar -->
+        <section class="glass-card rounded-2xl p-4 shadow-xl">
+            <div class="flex flex-col md:flex-row gap-3 items-center justify-between">
+                <!-- Search Input -->
+                <div class="relative w-full md:w-80">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <input type="text" id="searchInput" oninput="handleSearch()" placeholder="모든 컬럼 실시간 검색..." 
+                        class="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500">
+                </div>
+
+                <!-- Dynamic Column Filters & Controls -->
+                <div class="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
+                    <!-- Dynamic Select Filter Dropdown 1 -->
+                    <select id="filterDropdown1" onchange="applyFilters()" class="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-cyan-500 max-w-[160px]">
+                        <option value="">전체 카테고리</option>
+                    </select>
+
+                    <!-- Metric Target Switcher -->
+                    <div class="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-1.5">
+                        <span class="text-xs text-slate-400 font-medium">분석 지표:</span>
+                        <select id="metricSelector" onchange="updateDashboardView()" class="bg-transparent text-xs text-cyan-300 font-semibold focus:outline-none cursor-pointer">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+
+                    <!-- Reset Filter Button -->
+                    <button onclick="resetFilters()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl border border-slate-700 flex items-center gap-1 transition">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                        <span>초기화</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="kpiContainer">
+            <!-- Skeleton Loading State for Cards -->
+            <div class="glass-card p-5 rounded-2xl animate-pulse space-y-3">
+                <div class="h-4 bg-slate-800 rounded w-1/2"></div>
+                <div class="h-8 bg-slate-800 rounded w-3/4"></div>
+                <div class="h-3 bg-slate-800 rounded w-1/3"></div>
+            </div>
+            <div class="glass-card p-5 rounded-2xl animate-pulse space-y-3">
+                <div class="h-4 bg-slate-800 rounded w-1/2"></div>
+                <div class="h-8 bg-slate-800 rounded w-3/4"></div>
+                <div class="h-3 bg-slate-800 rounded w-1/3"></div>
+            </div>
+            <div class="glass-card p-5 rounded-2xl animate-pulse space-y-3">
+                <div class="h-4 bg-slate-800 rounded w-1/2"></div>
+                <div class="h-8 bg-slate-800 rounded w-3/4"></div>
+                <div class="h-3 bg-slate-800 rounded w-1/3"></div>
+            </div>
+            <div class="glass-card p-5 rounded-2xl animate-pulse space-y-3">
+                <div class="h-4 bg-slate-800 rounded w-1/2"></div>
+                <div class="h-8 bg-slate-800 rounded w-3/4"></div>
+                <div class="h-3 bg-slate-800 rounded w-1/3"></div>
+            </div>
+        </section>
+
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Main Trend / Bar Chart (2 cols wide) -->
+            <div class="lg:col-span-2 glass-card rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                            <i data-lucide="bar-chart-3" class="w-5 h-5 text-cyan-400"></i>
+                            <span id="mainChartTitle">항목별 지표 분석</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">선택한 주요 숫자 컬럼 기준 분포 데이터</p>
+                    </div>
+                    <div class="flex items-center gap-1 bg-slate-900 border border-slate-700/80 rounded-lg p-1">
+                        <button onclick="toggleMainChartType('bar')" id="btnChartBar" class="px-2.5 py-1 text-xs rounded bg-cyan-600 text-white font-medium transition">막대</button>
+                        <button onclick="toggleMainChartType('line')" id="btnChartLine" class="px-2.5 py-1 text-xs rounded text-slate-400 hover:text-white transition">꺾은선</button>
+                    </div>
+                </div>
+                <div class="relative w-full h-72 sm:h-80">
+                    <canvas id="mainChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Categorical Breakdown Chart (1 col wide) -->
+            <div class="glass-card rounded-2xl p-5 shadow-xl flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                            <i data-lucide="pie-chart" class="w-5 h-5 text-indigo-400"></i>
+                            <span id="pieChartTitle">비율 분포</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">주요 범주별 구성 비율</p>
+                    </div>
+                </div>
+                <div class="relative w-full h-72 sm:h-80 flex items-center justify-center">
+                    <canvas id="pieChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Secondary Infographic Row: Top Performers & Insight Highlights -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Top Rank Breakdown Chart -->
+            <div class="lg:col-span-2 glass-card rounded-2xl p-5 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                            <i data-lucide="trophy" class="w-5 h-5 text-amber-400"></i>
+                            <span>상위 항목 순위 (Top 7)</span>
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5">지표 수치 최상위 데이터 카드</p>
+                    </div>
+                </div>
+                <div class="relative w-full h-64">
+                    <canvas id="topHorizontalChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Smart Auto AI-Style Insight Summary Box -->
+            <div class="glass-card rounded-2xl p-5 shadow-xl flex flex-col justify-between bg-gradient-to-br from-slate-900/90 via-slate-900/60 to-slate-800/80">
+                <div>
+                    <div class="flex items-center space-x-2 text-cyan-400 mb-3">
+                        <i data-lucide="sparkles" class="w-5 h-5 animate-pulse"></i>
+                        <h3 class="text-base font-bold text-slate-100">자동 인사이트 요약</h3>
+                    </div>
+                    <div id="insightSummaryList" class="space-y-3 text-xs text-slate-300">
+                        <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800 flex items-start gap-2.5">
+                            <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+                            <p>데이터 로딩 완료 후 실시간 요약이 표시됩니다.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                    <span class="flex items-center gap-1">
+                        <i data-lucide="database" class="w-3.5 h-3.5 text-slate-500"></i>
+                        Google Sheet 실시간 연동
+                    </span>
+                    <span class="text-cyan-400 font-medium">자동 새로고침 중</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="glass-card rounded-2xl p-5 shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                    <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                        <i data-lucide="table" class="w-5 h-5 text-blue-400"></i>
+                        <span>원본 데이터 상세보기</span>
+                    </h3>
+                    <p class="text-xs text-slate-400 mt-0.5">필터링된 총 <span id="filteredCountText" class="font-bold text-cyan-400">0</span>개의 행</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="exportFilteredCSV()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 rounded-xl flex items-center gap-1.5 transition">
+                        <i data-lucide="download" class="w-3.5 h-3.5 text-slate-400"></i>
+                        <span>CSV 다운로드</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Scrollable Table -->
+            <div class="overflow-x-auto rounded-xl border border-slate-800/80">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead id="tableHeader" class="bg-slate-900/90 text-slate-300 font-semibold uppercase tracking-wider border-b border-slate-800">
+                        <tr>
+                            <th class="p-3">데이터 로딩 중...</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-800/60 text-slate-300">
+                        <!-- Dynamic Row Injection -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Table Pagination Controls -->
+            <div class="flex items-center justify-between mt-4 text-xs text-slate-400">
+                <div id="paginationInfo">1 - 10 / 전체 0개</div>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="changePage(-1)" id="btnPrevPage" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 rounded-lg transition">이전</button>
+                    <span id="currentPageNum" class="px-2 text-slate-200 font-medium">1</span>
+                    <button onclick="changePage(1)" id="btnNextPage" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 rounded-lg transition">다음</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <div id="urlModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="glass-card max-w-lg w-full rounded-2xl p-6 shadow-2xl border border-slate-700/80 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                    <i data-lucide="link" class="w-5 h-5 text-cyan-400"></i>
+                    Google Sheet CSV URL 설정
+                </h3>
+                <button onclick="closeUrlModal()" class="text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <p class="text-xs text-slate-400 leading-relaxed">
+                Google Sheets 웹 게시용 CSV 링크를 입력하시면 대시보드가 실시간으로 동기화됩니다.<br>
+                <span class="text-cyan-400 font-medium">(파일 &gt; 공유 &gt; 웹에 게시 &gt; CSV 형식 선택 후 링크 복사)</span>
+            </p>
+
+            <div class="space-y-2">
+                <label class="text-xs font-semibold text-slate-300">CSV Publish URL</label>
+                <input type="text" id="csvUrlInput" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:ring-2 focus:ring-cyan-500 focus:outline-none">
+            </div>
+
+            <div class="flex items-center justify-between pt-2">
+                <button onclick="loadDemoData()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl border border-slate-700 transition">
+                    샘플 데모 데이터 로드
+                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="closeUrlModal()" class="px-4 py-2 bg-slate-800 text-slate-300 text-xs rounded-xl hover:bg-slate-700">취소</button>
+                    <button onclick="saveAndFetchUrl()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs rounded-xl shadow-lg shadow-cyan-600/30">
+                        적용 및 연결
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let DEFAULT_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS3K3fv_dWLjv7rITpR0ni3xMR97NXL41n2Gi-Nv606pLfUfwCGXV_NCzA-JjM_IZ0uC07HFu6aYN-H/pub?output=csv";
+        let currentCsvUrl = DEFAULT_CSV_URL;
+        
+        let rawData = [];
+        let filteredData = [];
+        let columns = [];
+        let numericColumns = [];
+        let categoricalColumns = [];
+        let activeMetricColumn = "";
+        let activeCategoryColumn = "";
+
+        let refreshTimer = null;
+        let mainChartInstance = null;
+        let pieChartInstance = null;
+        let topChartInstance = null;
+        let mainChartType = 'bar';
+
+        // Table Pagination State
+        let currentPage = 1;
+        const rowsPerPage = 10;
+
+        window.onload = function() {
+            lucide.createIcons();
+            document.getElementById('csvUrlInput').value = currentCsvUrl;
+            document.getElementById('sheetUrlDisplay').innerText = currentCsvUrl;
+            
+            fetchData();
+            startAutoRefresh();
+        };
+
+        function fetchData() {
+            const refreshIcon = document.getElementById('refreshIcon');
+            refreshIcon.classList.add('animate-spin');
+
+            showStatusToast("info", "데이터 수신 중...", "Google Sheet에서 최신 CSV 데이터를 가져오고 있습니다.");
+
+            Papa.parse(currentCsvUrl, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    refreshIcon.classList.remove('animate-spin');
+                    if (results.data && results.data.length > 0) {
+                        rawData = results.data;
+                        processParsedData();
+                        updateLastSyncTime();
+                        showStatusToast("success", "동기화 성공", `총 ${rawData.length}개 레코드가 정상 업데이트 되었습니다.`);
+                    } else {
+                        showStatusToast("error", "데이터 비어있음", "수신된 CSV 데이터에 행이 존재하지 않습니다.");
+                        loadDemoFallback("수신된 CSV가 비어있어 샘플 데모 데이터를 표시합니다.");
+                    }
+                },
+                error: function(err) {
+                    refreshIcon.classList.remove('animate-spin');
+                    console.warn("CSV Fetch error:", err);
+                    showStatusToast("error", "연동 실패 (CORS/네트워크)", "지정한 URL에서 데이터를 불러오지 못해 데모 모드로 전환합니다.");
+                    loadDemoFallback("네트워크 제한으로 인해 기본 샘플 데모 데이터로 대시보드를 구성합니다.");
+                }
+            });
+        }
+
+        function processParsedData() {
+            if (!rawData || rawData.length === 0) return;
+
+            // Extract Header Keys
+            columns = Object.keys(rawData[0]).filter(k => k && k.trim() !== "");
+            
+            numericColumns = [];
+            categoricalColumns = [];
+
+            // Detect Numeric vs Categorical Columns
+            columns.forEach(col => {
+                let numericCount = 0;
+                let totalChecked = Math.min(rawData.length, 30);
+                
+                for (let i = 0; i < totalChecked; i++) {
+                    let val = rawData[i][col];
+                    if (val !== undefined && val !== null && val !== "") {
+                        let cleanNum = String(val).replace(/[,%$\s]/g, '');
+                        if (!isNaN(Number(cleanNum))) {
+                            numericCount++;
+                        }
+                    }
+                }
+
+                if (numericCount >= totalChecked * 0.7) {
+                    numericColumns.push(col);
+                } else {
+                    categoricalColumns.push(col);
+                }
+            });
+
+            // Fallback column assignment if none detected
+            if (numericColumns.length === 0 && columns.length > 0) {
+                numericColumns.push(columns[columns.length - 1]);
+            }
+            if (categoricalColumns.length === 0 && columns.length > 0) {
+                categoricalColumns.push(columns[0]);
+            }
+
+            activeMetricColumn = numericColumns[0] || columns[0];
+            activeCategoryColumn = categoricalColumns[0] || columns[0];
+
+            populateMetricSelectors();
+            populateCategoryFilter();
+            
+            filteredData = [...rawData];
+            updateDashboardView();
+        }
+
+        function populateMetricSelectors() {
+            const metricSel = document.getElementById('metricSelector');
+            metricSel.innerHTML = "";
+            
+            numericColumns.forEach(col => {
+                const opt = document.createElement('option');
+                opt.value = col;
+                opt.textContent = col;
+                metricSel.appendChild(opt);
+            });
+
+            if (numericColumns.length === 0) {
+                columns.forEach(col => {
+                    const opt = document.createElement('option');
+                    opt.value = col;
+                    opt.textContent = col;
+                    metricSel.appendChild(opt);
+                });
+            }
+        }
+
+        function populateCategoryFilter() {
+            const filter1 = document.getElementById('filterDropdown1');
+            filter1.innerHTML = `<option value="">전체 (${activeCategoryColumn})</option>`;
+
+            if (!activeCategoryColumn) return;
+
+            const uniqueVals = Array.from(new Set(rawData.map(r => r[activeCategoryColumn]))).filter(Boolean).slice(0, 50);
+            uniqueVals.forEach(val => {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = val;
+                filter1.appendChild(opt);
+            });
+        }
+
+        function applyFilters() {
+            const searchQuery = document.getElementById('searchInput').value.toLowerCase().trim();
+            const filterVal = document.getElementById('filterDropdown1').value;
+
+            filteredData = rawData.filter(row => {
+                // Match search query
+                let matchesSearch = true;
+                if (searchQuery) {
+                    matchesSearch = Object.values(row).some(v => String(v).toLowerCase().includes(searchQuery));
+                }
+
+                // Match category filter
+                let matchesCategory = true;
+                if (filterVal && activeCategoryColumn) {
+                    matchesCategory = (String(row[activeCategoryColumn]) === filterVal);
+                }
+
+                return matchesSearch && matchesCategory;
+            });
+
+            currentPage = 1;
+            updateDashboardView();
+        }
+
+        function handleSearch() {
+            applyFilters();
+        }
+
+        function resetFilters() {
+            document.getElementById('searchInput').value = "";
+            document.getElementById('filterDropdown1').value = "";
+            applyFilters();
+        }
+
+        function updateDashboardView() {
+            activeMetricColumn = document.getElementById('metricSelector').value || numericColumns[0] || columns[0];
+            
+            renderKPIs();
+            renderCharts();
+            generateSmartInsights();
+            renderTable();
+        }
+
+        function renderKPIs() {
+            const container = document.getElementById('kpiContainer');
+            container.innerHTML = "";
+
+            if (filteredData.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full glass-card p-6 text-center text-slate-400 text-xs">
+                        조건에 일치하는 데이터가 없습니다. 필터를 초기화해 주세요.
+                    </div>
+                `;
+                return;
+            }
+
+            // Metric Calculations
+            let sum = 0;
+            let count = 0;
+            let min = Infinity;
+            let max = -Infinity;
+            let maxItem = null;
+
+            filteredData.forEach(row => {
+                let rawVal = row[activeMetricColumn];
+                if (rawVal !== undefined && rawVal !== null && rawVal !== "") {
+                    let num = parseFloat(String(rawVal).replace(/[,%$\s]/g, ''));
+                    if (!isNaN(num)) {
+                        sum += num;
+                        count++;
+                        if (num < min) min = num;
+                        if (num > max) {
+                            max = num;
+                            maxItem = row[activeCategoryColumn] || row[columns[0]] || "항목";
+                        }
+                    }
+                }
+            });
+
+            const avg = count > 0 ? (sum / count) : 0;
+            if (min === Infinity) min = 0;
+            if (max === -Infinity) max = 0;
+
+            // Formatter helper
+            const formatNum = (v) => v >= 10000 ? v.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) : v.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
+
+            const cards = [
+                {
+                    title: `총 ${activeMetricColumn} 합계`,
+                    value: formatNum(sum),
+                    subText: `총 ${filteredData.length}개 표본 데이터`,
+                    icon: "coins",
+                    color: "from-cyan-500 to-blue-600",
+                    textColor: "text-cyan-400"
+                },
+                {
+                    title: `평균 ${activeMetricColumn}`,
+                    value: formatNum(avg),
+                    subText: "유효 수치 평균값",
+                    icon: "calculator",
+                    color: "from-emerald-500 to-teal-600",
+                    textColor: "text-emerald-400"
+                },
+                {
+                    title: "최고 성과 항목 (Max)",
+                    value: formatNum(max),
+                    subText: maxItem ? `최고: ${maxItem}` : "최대 수치 데이터",
+                    icon: "award",
+                    color: "from-amber-500 to-orange-600",
+                    textColor: "text-amber-400"
+                },
+                {
+                    title: "표본 및 범주 개수",
+                    value: `${filteredData.length} 건`,
+                    subText: `범주: ${new Set(filteredData.map(r => r[activeCategoryColumn])).size} 가지`,
+                    icon: "database",
+                    color: "from-purple-500 to-indigo-600",
+                    textColor: "text-indigo-400"
+                }
+            ];
+
+            cards.forEach(card => {
+                const html = `
+                    <div class="glass-card p-5 rounded-2xl shadow-lg relative overflow-hidden group hover:border-slate-600/80 transition duration-300">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold text-slate-400">${card.title}</span>
+                            <div class="p-2 bg-gradient-to-tr ${card.color} rounded-xl text-white shadow-md shadow-cyan-900/20">
+                                <i data-lucide="${card.icon}" class="w-4 h-4"></i>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-2xl font-extrabold text-slate-100 tracking-tight">${card.value}</div>
+                            <div class="text-[11px] ${card.textColor} mt-1 font-medium flex items-center gap-1">
+                                <i data-lucide="trending-up" class="w-3 h-3"></i>
+                                <span>${card.subText}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', html);
+            });
+
+            lucide.createIcons();
+        }
+
+        function renderCharts() {
+            if (filteredData.length === 0) return;
+
+            // Group data by activeCategoryColumn
+            const aggregated = {};
+            filteredData.forEach(row => {
+                let cat = row[activeCategoryColumn] || "기타";
+                let rawVal = row[activeMetricColumn];
+                let num = 0;
+                if (rawVal !== undefined && rawVal !== null && rawVal !== "") {
+                    num = parseFloat(String(rawVal).replace(/[,%$\s]/g, '')) || 0;
+                }
+                aggregated[cat] = (aggregated[cat] || 0) + num;
+            });
+
+            const labels = Object.keys(aggregated).slice(0, 15);
+            const dataValues = labels.map(l => aggregated[l]);
+
+            // Document chart titles
+            document.getElementById('mainChartTitle').innerText = `${activeMetricColumn} - 항목별 추이`;
+            document.getElementById('pieChartTitle').innerText = `${activeCategoryColumn} 점유 비율`;
+
+            // Palette definitions
+            const colors = [
+                '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#f59e0b',
+                '#10b981', '#14b8a6', '#f43f5e', '#3b82f6', '#a855f7'
+            ];
+
+            // 1. Render Main Bar/Line Chart
+            const ctxMain = document.getElementById('mainChart').getContext('2d');
+            if (mainChartInstance) mainChartInstance.destroy();
+
+            mainChartInstance = new Chart(ctxMain, {
+                type: mainChartType,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: activeMetricColumn,
+                        data: dataValues,
+                        backgroundColor: mainChartType === 'bar' ? 'rgba(14, 165, 233, 0.65)' : 'rgba(14, 165, 233, 0.15)',
+                        borderColor: '#0ea5e9',
+                        borderWidth: 2,
+                        borderRadius: 6,
+                        fill: true,
+                        tension: 0.35,
+                        pointBackgroundColor: '#38bdf8'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#38bdf8',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 10
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            grid: { color: 'rgba(51, 65, 85, 0.3)' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            grid: { color: 'rgba(51, 65, 85, 0.3)' }
+                        }
+                    }
+                }
+            });
+
+            // 2. Render Pie/Doughnut Chart
+            const ctxPie = document.getElementById('pieChart').getContext('2d');
+            if (pieChartInstance) pieChartInstance.destroy();
+
+            pieChartInstance = new Chart(ctxPie, {
+                type: 'doughnut',
+                data: {
+                    labels: labels.slice(0, 6),
+                    datasets: [{
+                        data: dataValues.slice(0, 6),
+                        backgroundColor: colors.slice(0, 6),
+                        borderWidth: 2,
+                        borderColor: '#0f172a'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#cbd5e1', font: { size: 10 }, boxWidth: 12 }
+                        }
+                    },
+                    cutout: '65%'
+                }
+            });
+
+            // 3. Render Top Performers Horizontal Bar Chart
+            const ctxTop = document.getElementById('topHorizontalChart').getContext('2d');
+            if (topChartInstance) topChartInstance.destroy();
+
+            // Sort top items
+            const sortedItems = labels.map((lbl, idx) => ({ label: lbl, val: dataValues[idx] }))
+                                      .sort((a, b) => b.val - a.val)
+                                      .slice(0, 7);
+
+            topChartInstance = new Chart(ctxTop, {
+                type: 'bar',
+                data: {
+                    labels: sortedItems.map(i => i.label),
+                    datasets: [{
+                        label: activeMetricColumn,
+                        data: sortedItems.map(i => i.val),
+                        backgroundColor: 'rgba(99, 102, 241, 0.75)',
+                        borderColor: '#6366f1',
+                        borderWidth: 1.5,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8', font: { size: 10 } },
+                            grid: { color: 'rgba(51, 65, 85, 0.3)' }
+                        },
+                        y: {
+                            ticks: { color: '#e2e8f0', font: { size: 10 } },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function toggleMainChartType(type) {
+            mainChartType = type;
+            const btnBar = document.getElementById('btnChartBar');
+            const btnLine = document.getElementById('btnChartLine');
+
+            if (type === 'bar') {
+                btnBar.className = "px-2.5 py-1 text-xs rounded bg-cyan-600 text-white font-medium transition";
+                btnLine.className = "px-2.5 py-1 text-xs rounded text-slate-400 hover:text-white transition";
+            } else {
+                btnLine.className = "px-2.5 py-1 text-xs rounded bg-cyan-600 text-white font-medium transition";
+                btnBar.className = "px-2.5 py-1 text-xs rounded text-slate-400 hover:text-white transition";
+            }
+            renderCharts();
+        }
+
+        function generateSmartInsights() {
+            const list = document.getElementById('insightSummaryList');
+            list.innerHTML = "";
+
+            if (filteredData.length === 0) return;
+
+            let totalCount = filteredData.length;
+            let sum = 0;
+            let maxVal = -Infinity;
+            let maxName = "";
+
+            filteredData.forEach(row => {
+                let v = parseFloat(String(row[activeMetricColumn]).replace(/[,%$\s]/g, '')) || 0;
+                sum += v;
+                if (v > maxVal) {
+                    maxVal = v;
+                    maxName = row[activeCategoryColumn] || row[columns[0]] || "최고 항목";
+                }
+            });
+
+            const avg = totalCount > 0 ? (sum / totalCount) : 0;
+
+            const insights = [
+                {
+                    icon: "trending-up",
+                    color: "text-cyan-400",
+                    text: `현재 필터링된 전체 레코드는 <b>${totalCount}개</b>입니다.`
+                },
+                {
+                    icon: "award",
+                    color: "text-amber-400",
+                    text: `<b>${activeMetricColumn}</b>의 최고 성과 항목은 <b>'${maxName}'</b>이며 수치는 <b>${maxVal.toLocaleString()}</b>입니다.`
+                },
+                {
+                    icon: "pie-chart",
+                    color: "text-indigo-400",
+                    text: `평균 지표값은 <b>${avg.toFixed(1)}</b>이며 전체 합계 수치는 <b>${sum.toLocaleString()}</b>입니다.`
+                }
+            ];
+
+            insights.forEach(item => {
+                const html = `
+                    <div class="p-3 bg-slate-950/60 rounded-xl border border-slate-800 flex items-start gap-2.5">
+                        <i data-lucide="${item.icon}" class="w-4 h-4 ${item.color} flex-shrink-0 mt-0.5"></i>
+                        <p class="leading-relaxed">${item.text}</p>
+                    </div>
+                `;
+                list.insertAdjacentHTML('beforeend', html);
+            });
+
+            lucide.createIcons();
+        }
+
+        function renderTable() {
+            const headerEl = document.getElementById('tableHeader');
+            const bodyEl = document.getElementById('tableBody');
+            document.getElementById('filteredCountText').innerText = filteredData.length;
+
+            if (columns.length === 0 || filteredData.length === 0) {
+                headerEl.innerHTML = `<tr><th class="p-3">데이터 없음</th></tr>`;
+                bodyEl.innerHTML = `<tr><td class="p-4 text-center text-slate-500">표시할 데이터가 존재하지 않습니다.</td></tr>`;
+                document.getElementById('paginationInfo').innerText = "0 / 0개";
+                return;
+            }
+
+            // Table Header
+            headerEl.innerHTML = `
+                <tr>
+                    ${columns.map(col => `<th class="p-3 text-left whitespace-nowrap">${col}</th>`).join('')}
+                </tr>
+            `;
+
+            // Pagination calculation
+            const totalPages = Math.ceil(filteredData.length / rowsPerPage) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+
+            const startIdx = (currentPage - 1) * rowsPerPage;
+            const pageData = filteredData.slice(startIdx, startIdx + rowsPerPage);
+
+            // Table Body
+            bodyEl.innerHTML = pageData.map(row => `
+                <tr class="hover:bg-slate-800/40 transition">
+                    ${columns.map(col => `
+                        <td class="p-3 whitespace-nowrap max-w-xs truncate font-mono text-[11px]">
+                            ${row[col] !== undefined && row[col] !== null ? row[col] : '-'}
+                        </td>
+                    `).join('')}
+                </tr>
+            `).join('');
+
+            // Pagination info
+            document.getElementById('paginationInfo').innerText = `${startIdx + 1} - ${Math.min(startIdx + rowsPerPage, filteredData.length)} / 전체 ${filteredData.length}개`;
+            document.getElementById('currentPageNum').innerText = `${currentPage} / ${totalPages}`;
+
+            document.getElementById('btnPrevPage').disabled = (currentPage === 1);
+            document.getElementById('btnNextPage').disabled = (currentPage >= totalPages);
+        }
+
+        function changePage(delta) {
+            currentPage += delta;
+            renderTable();
+        }
+
+        function exportFilteredCSV() {
+            if (filteredData.length === 0) return;
+            const csv = Papa.unparse(filteredData);
+            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `dashboard_export_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function openUrlModal() {
+            document.getElementById('urlModal').classList.remove('hidden');
+        }
+
+        function closeUrlModal() {
+            document.getElementById('urlModal').classList.add('hidden');
+        }
+
+        function saveAndFetchUrl() {
+            const inputVal = document.getElementById('csvUrlInput').value.trim();
+            if (inputVal) {
+                currentCsvUrl = inputVal;
+                document.getElementById('sheetUrlDisplay').innerText = currentCsvUrl;
+                closeUrlModal();
+                fetchData();
+            }
+        }
+
+        function startAutoRefresh() {
+            if (refreshTimer) clearInterval(refreshTimer);
+            const interval = parseInt(document.getElementById('refreshIntervalSelect').value);
+            if (interval > 0) {
+                refreshTimer = setInterval(() => {
+                    fetchData();
+                }, interval);
+            }
+        }
+
+        function changeRefreshInterval() {
+            startAutoRefresh();
+        }
+
+        function updateLastSyncTime() {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            document.getElementById('lastSyncTime').innerText = timeStr;
+        }
+
+        function loadDemoData() {
+            closeUrlModal();
+            loadDemoFallback("시각화 데모 데이터셋을 로드했습니다.");
+        }
+
+        function loadDemoFallback(msg) {
+            // Generate rich realistic fallback dataset
+            rawData = [
+                { "부서/카테고리": "개발팀", "프로젝트": "웹 대시보드 구축", "실적점수": 95, "매출(만원)": 4500, "상태": "완료", "등록일": "2026-09-01" },
+                { "부서/카테고리": "마케팅팀", "프로젝트": "SNS 캠페인 연동", "실적점수": 88, "매출(만원)": 3200, "상태": "진행중", "등록일": "2026-09-03" },
+                { "부서/카테고리": "디자인팀", "프로젝트": "UI/UX 리뉴얼", "실적점수": 92, "매출(만원)": 2800, "상태": "완료", "등록일": "2026-09-05" },
+                { "부서/카테고리": "영업팀", "프로젝트": "신규 고객사 유치", "실적점수": 78, "매출(만원)": 6800, "상태": "진행중", "등록일": "2026-09-10" },
+                { "부서/카테고리": "개발팀", "프로젝트": "API 인프라 확장", "실적점수": 85, "매출(만원)": 3900, "상태": "검토중", "등록일": "2026-09-12" },
+                { "부서/카테고리": "기획팀", "프로젝트": "신규 서비스 기획", "실적점수": 90, "매출(만원)": 1500, "상태": "진행중", "등록일": "2026-09-15" },
+                { "부서/카테고리": "영업팀", "프로젝트": "글로벌 파트너십", "실적점수": 96, "매출(만원)": 8200, "상태": "완료", "등록일": "2026-09-18" },
+                { "부서/카테고리": "마케팅팀", "프로젝트": "브랜드 리포지셔닝", "실적점수": 82, "매출(만원)": 2400, "상태": "검토중", "등록일": "2026-09-20" },
+                { "부서/카테고리": "디자인팀", "프로젝트": "인포그래픽 에셋 제작", "실적점수": 89, "매출(만원)": 1900, "상태": "완료", "등록일": "2026-09-22" }
+            ];
+
+            processParsedData();
+            updateLastSyncTime();
+            showStatusToast("info", "데모 모드 실행 중", msg);
+        }
+
+        function showStatusToast(type, title, message) {
+            const toast = document.getElementById('statusToast');
+            const titleEl = document.getElementById('statusTitle');
+            const msgEl = document.getElementById('statusMsg');
+            const iconEl = document.getElementById('statusIcon');
+
+            toast.classList.remove('hidden', 'bg-emerald-950/80', 'border-emerald-700/60', 'text-emerald-300',
+                'bg-amber-950/80', 'border-amber-700/60', 'text-amber-300',
+                'bg-rose-950/80', 'border-rose-700/60', 'text-rose-300',
+                'bg-sky-950/80', 'border-sky-700/60', 'text-sky-300');
+
+            if (type === 'success') {
+                toast.classList.add('bg-emerald-950/80', 'border-emerald-700/60', 'text-emerald-300');
+                iconEl.setAttribute('data-lucide', 'check-circle');
+            } else if (type === 'error') {
+                toast.classList.add('bg-rose-950/80', 'border-rose-700/60', 'text-rose-300');
+                iconEl.setAttribute('data-lucide', 'alert-triangle');
+            } else {
+                toast.classList.add('bg-sky-950/80', 'border-sky-700/60', 'text-sky-300');
+                iconEl.setAttribute('data-lucide', 'info');
+            }
+
+            titleEl.innerText = title;
+            msgEl.innerText = message;
+            lucide.createIcons();
+
+            toast.classList.remove('hidden');
+
+            setTimeout(() => {
+                hideStatusToast();
+            }, 5000);
+        }
+
+        function hideStatusToast() {
+            document.getElementById('statusToast').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
